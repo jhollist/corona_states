@@ -1,0 +1,14 @@
+library(lubridate)
+library(dplyr)
+
+cases <- seq_double(2,60)
+
+every_1_day <- tibble(cases, date_1 = ymd("2020-03-03") + 
+                        seq(1, length.out = length(cases), by = 1)) %>%
+  filter(date_1 <= today())
+every_2_day <- tibble(cases, date_2 = ymd("2020-03-03") + 
+                        seq(1, length.out = length(cases), by = 2)) %>%
+  filter(date_2 <= today())
+every_3_day <- tibble(cases, date_3 = ymd("2020-03-03") + 
+                        seq(1, length.out = length(cases), by = 3)) %>%
+  filter(date_3 <= today())
