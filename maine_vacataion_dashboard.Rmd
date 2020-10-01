@@ -1,0 +1,162 @@
+---
+title: "2020 Maine Vacation:  Should I stay, or should I go? (updated: `r lubridate::today()`)"
+output:
+  flexdashboard::flex_dashboard:
+    vertical_layout: scroll
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r echo = FALSE}
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(zoo)
+library(lubridate)
+library(hrbrthemes)
+library(plotly)
+library(zoo)
+
+daily_nums <- function(metric){
+  c(metric[1],rollapply(metric, 2, function(x) ifelse(is.na(x[1]), NA, x[2] - x[1])))
+}
+
+
+covid_daily_states <- read_csv("https://covidtracking.com/api/v1/states/daily.csv") %>%
+  select(date, state, positive, negative, pending, death, 
+         daily_hospitalized = hospitalizedCurrently, ) %>% 
+  mutate(positive = case_when(is.na(positive) ~ 0,
+                              TRUE ~ positive),
+         negative = case_when(is.na(negative) ~ 0,
+                              TRUE ~ negative),
+         pending = case_when(is.na(pending) ~ 0,
+                             TRUE ~ pending),
+         death = case_when(is.na(death) ~ 0,
+                           TRUE ~ death),
+         daily_hospitalized = case_when(is.na(daily_hospitalized) ~ 0,
+                                        TRUE ~ daily_hospitalized),
+         date = ymd(date)) %>%
+  filter(state %in% c("RI", "CT")) %>%
+  group_by(state) %>%
+  arrange(state, date) %>%
+  mutate(daily_positive = daily_nums(positive), 
+         daily_negative = daily_nums(negative),
+         daily_tests = daily_positive + daily_negative + pending,
+         daily_death = daily_nums(death),
+         daily_pending = pending) %>%
+  ungroup() %>%
+  select(date, state, daily_positive, daily_negative, daily_pending, 
+         daily_tests, daily_death, daily_hospitalized) %>%
+  mutate(daily_positivity = daily_positive/daily_tests * 100,
+         seven_day_positive = rollmean(daily_positive, 7, fill = NA),
+         seven_day_hospital = rollmean(daily_hospitalized, 7, fill = NA),
+         seven_day_positivity= rollmean(daily_positivity,7, fill = NA))  %>%
+  filter(daily_negative != 0, date >= ymd("2020-03-01"))
+
+covid_daily_states <- covid_daily_states %>% 
+  mutate(seven_day_positivity = rollmean(daily_positivity, 7, NA))
+
+covid_weekly_states <- covid_daily_states %>%
+  mutate(week = week(date)) %>%
+group_by(state, week) %>%
+  summarize(date = min(date),
+            weekly_positive = sum(daily_positive, na.rm = TRUE),
+            weekly_negative = sum(daily_negative, na.rm = TRUE),
+            weekly_pending = sum(daily_pending, na.rm = TRUE),
+            weekly_hospitalized = sum(daily_hospitalized, na.rm = TRUE),
+            weekly_tests = weekly_positive + weekly_negative + weekly_pending,
+            weekly_positivity = weekly_positive/weekly_tests * 100,
+            weekly_positive_avg = mean(daily_positive, na.rm = TRUE),
+            weekly_negative_avg = mean(daily_negative, na.rm = TRUE),
+            weekly_pending_avg = mean(daily_pending, na.rm = TRUE),
+            weekly_hospitalized_avg = mean(daily_hospitalized, na.rm = TRUE),
+            weekly_tests_avg = weekly_positive_avg + weekly_negative_avg + weekly_pending_avg,
+            weekly_positivity_avg = weekly_positive_avg/weekly_tests_avg * 100) %>%
+  ungroup() %>%
+  filter(weekly_negative != 0, date >= ymd("2020-05-01"))
+
+weekly_cases_gg <- ggplot(covid_weekly_states, aes(x = date, 
+                                                  y = weekly_positive_avg)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(. ~ state) +
+  scale_y_log10() +
+  theme_ipsum_rc()
+ 
+weekly_positivity_gg <- ggplot(covid_weekly_states, aes(x = date, 
+                                                       y = weekly_positivity_avg)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(. ~ state) +
+  theme_ipsum_rc()
+
+weekly_hospital_gg <- ggplot(covid_weekly_states, aes(x = date, 
+                                                       y = weekly_hospitalized_avg)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(. ~ state) +
+  theme_ipsum_rc() +
+  scale_y_log10()
+
+cases_gg <- covid_daily_states %>%
+  #filter(state == "RI") %>% 
+  ggplot(aes(x = date, y = daily_positive)) +
+  geom_point(aes(x = date, y = seven_day_positive))+
+  geom_line(aes(x = date, y = seven_day_positive)) +
+  facet_grid(. ~ state) +
+  scale_y_log10() +
+  theme_ipsum_rc()
+
+positivity_gg <- covid_daily_states %>% 
+  #filter(state == "RI") %>% 
+  ggplot(aes(x = date, y = daily_positivity)) +
+  geom_point(aes(x = date, y = seven_day_positivity))+
+  geom_line(aes(x = date, y = seven_day_positivity)) +
+  facet_grid(. ~ state) +
+  scale_y_log10() +
+  theme_ipsum_rc()
+
+hospital_gg <- ggplot(covid_daily_states, aes(x = date, y = daily_hospitalized)) +
+  geom_point(aes(x = date, y = seven_day_hospital))+
+  geom_line(aes(x = date, y = seven_day_hospital)) +
+  facet_grid(. ~ state) +
+  scale_y_log10() +
+  theme_ipsum_rc()
+  
+```
+
+### Weekly Positive COVID Cases
+
+```{r echo=FALSE}
+ggplotly(weekly_cases_gg) 
+```
+
+### Weekly Positivity Rates
+
+```{r echo=FALSE}
+ggplotly(weekly_positivity_gg)
+```
+
+### Weekly Hospitalizations
+
+```{r echo=FALSE}
+ggplotly(weekly_hospital_gg)
+```
+
+### 7-Day rolling average Positive COVID Cases
+
+```{r echo=FALSE}
+ggplotly(cases_gg) 
+```
+
+### 7-Day rolling average  Positivity Rates
+
+```{r echo=FALSE}
+ggplotly(positivity_gg)
+```
+
+### 7-Day rolling average  Hospitalizations
+
+```{r echo=FALSE}
+ggplotly(hospital_gg)
+```
